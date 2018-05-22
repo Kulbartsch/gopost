@@ -2,6 +2,8 @@
 // (c) 2018 Alexander Kulbartsch
 // License GPL
 
+// TODO: static URL (as an parameter)
+// TODO: placeholder in message and note templates for variables like static URL and time
 // TODO: add a frontend
 
 package main
@@ -61,10 +63,9 @@ func mastodon(message []string) {
 
 func tweet(message []string) {
 	fmt.Fprintln(os.Stderr, "Twitter not yet implemented")
-	return 
+	return
 
 	// TODO: implement ...
-
 
 }
 
@@ -104,5 +105,7 @@ func main() {
 	}
 
 	// TODO: add Diaspora*
+
+	// TODO: add Matrix
 
 }
