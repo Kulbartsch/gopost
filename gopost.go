@@ -10,19 +10,33 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/dghubble/go-twitter/twitter"
+	"github.com/dghubble/oauth1"
 	"os"
 	"os/exec"
+	"os/user"
 	"time"
+	"path/filepath"
 )
 
 var verbose bool
 var test bool
 
-var socialLogins = map[string]string{
-	"twitter_id": "bla",
-	"twitter_":   "blub",
+type Configuration struct {
+	noteHead		string
+	noteFoot		string
+	twitter			bool
+        TwitterConsumerKey	string
+        TwitterConsumerSecret	string
+        TwitterAccessToken	string
+        TwitterAccessSecret	string
+	Variable1		string
+	Variable2		string
+	Variable3		string
+	Variable4		string
 }
 
 func note(message []string) {
@@ -35,37 +49,51 @@ func note(message []string) {
 	fmt.Println("  </p>\n</div>")
 }
 
-func mastodon(message []string) {
-	// TODO: native implementation
+func mastodon(messagestring string) {
+	// TODO: native implementation / check https://github.com/mattn/go-mastodon or https://github.com/McKael/madon)
 
-	cmd := "madonctl toot \""
-	for i, l := range message {
-		if i > 0 {
-			cmd = cmd + "\n" + l
-		} else {
-			cmd = cmd + l
-		}
-	}
-	cmd = cmd + "\""
+	cmd := "madonctl toot \"" + messagestring + "\""
 	if verbose {
-		fmt.Fprintf(os.Stderr, "The madonctl command is: %s\n", cmd)
+		fmt.Fprintf(os.Stderr, "mastodon: The madonctl command is: %s\n", cmd)
 	}
 	if !test {
 		out, err := exec.Command("sh", "-c", cmd).Output()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "reading standard input:", err)
+			fmt.Fprintln(os.Stderr, "mastodon: reading standard input: ", err)
 		}
 		if verbose {
-			fmt.Fprintf(os.Stderr, "The madonctl out is: %s\n", out)
+			fmt.Fprintf(os.Stderr, "mastodon: The madonctl out is: %s\n", out)
 		}
 	}
 }
 
-func tweet(message []string) {
-	fmt.Fprintln(os.Stderr, "Twitter not yet implemented")
-	return
+func tweet(messagestring string) {
+	// refers to https://github.com/dghubble/go-twitter
+	// TODO: optional remove "@twitter.com" from mentions like "@username@twitter.com"
 
-	// TODO: implement ...
+	config := oauth1.NewConfig("consumerKey", "consumerSecret")
+	token := oauth1.NewToken("accessToken", "accessSecret")
+	httpClient := config.Client(oauth1.NoContext, token)
+
+	// Twitter client
+	client := twitter.NewClient(httpClient)
+
+	// Home Timeline
+	// tweets, resp, err := client.Timelines.HomeTimeline(&twitter.HomeTimelineParams{
+	//     Count: 20,
+	// })
+
+	// Send a Tweet
+	if !test {
+		tweet, resp, err := client.Statuses.Update(messagestring, nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Twitter: error posting: ", err)
+		}
+		if verbose {
+			fmt.Fprintln(os.Stderr, "Twitter: tweet: ", tweet)
+			fmt.Fprintln(os.Stderr, "Twitter: response: ", resp)
+		}
+	}
 
 }
 
@@ -75,37 +103,67 @@ func main() {
 	var out_note = flag.Bool("note", true, "Output of message as microformat minimal note to stdout")
 	var out_mastodon = flag.Bool("mastodon", false, "Post message to mastodon")
 	var out_twitter = flag.Bool("twitter", false, "Post message to twitter")
+	var configfile = flag.String("config", "~/.config/gopost/config.json", "configuration file name")
 	flag.BoolVar(&verbose, "verbose", false, "verbose output")
-	flag.BoolVar(&test, "test", false, "testing, no external call")
+	flag.BoolVar(&test, "test", false, "testing, no external call to social networks")
 
 	flag.Parse()
+
+	// read config file
+	var fqconfigfile string
+	fqconfigfile = *configfile
+	if fqconfigfile[:2] == "~/" {
+		usr, _ := user.Current()
+		fqconfigfile = filepath.Join(usr.HomeDir, fqconfigfile[2:])
+	}
+	file, err := os.Open(fqconfigfile)
+	defer file.Close()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "main: error reading configuration file: ", err)
+	} else {
+		decoder := json.NewDecoder(file)
+		configuration := Configuration{}
+		err = decoder.Decode(&configuration)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "main: error decoding configuration file: ", err)
+		}
+	}
+	if verbose {
+		fmt.Fprintln(os.Stderr, "main: config from file: ", configuration)
+	}
 
 	// read message
 	var message []string
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
-		message = append(message, scanner.Text()) // Println will add back the final '\n'
+		message = append(message, scanner.Text())
 	}
 	if err := scanner.Err(); err != nil {
-		fmt.Fprintln(os.Stderr, "reading standard input:", err)
+		fmt.Fprintln(os.Stderr, "main: error reading standard input: ", err)
+	}
+	var messagestring string = ""
+	for i, l := range message {
+		if i == 0 {
+			messagestring = l
+		} else {
+			messagestring = messagestring + "\n" + l
+		}
 	}
 
 	// send messages
 
 	if *out_note {
-		note(message)
+		go note(message)
 	}
 
 	if *out_mastodon {
-		mastodon(message)
+		go mastodon(messagestring)
 	}
 
 	if *out_twitter {
-		tweet(message)
+		go tweet(messagestring)
 	}
 
 	// TODO: add Diaspora*
-
-	// TODO: add Matrix
 
 }
